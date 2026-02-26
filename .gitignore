@@ -1,0 +1,34 @@
+# Virtual Environment
+venv/
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+
+# Migrations (optional - depends on project)
+# alembic/versions/
+
+# SQLite database (if local)
+*.db
