@@ -5,7 +5,7 @@ from app.auth.jwt import verify_token
 from app.db.base import get_db
 from app.models.user import User
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=True)
 
 
 def get_current_user(

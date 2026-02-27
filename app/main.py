@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 
 from app.core.config import APP_NAME
 from app.db.base import Base, engine
@@ -15,6 +14,8 @@ app = FastAPI(
     title=APP_NAME,
     description="Meat AI Assistant Backend API",
     version="1.0.0",
+    swagger_ui_init_oauth={},
+    openapi_tags=None,
 )
 
 app.add_middleware(
@@ -35,36 +36,3 @@ app.include_router(documents.router)
 def root():
     return {"message": "Server is running"}
 
-
-# ── Swagger Bearer Auth ───────────────────────────────────────────────────────
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-
-    # Add BearerAuth security scheme
-    schema.setdefault("components", {})
-    schema["components"]["securitySchemes"] = {
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-        }
-    }
-
-    # Apply security globally to all paths
-    for path in schema.get("paths", {}).values():
-        for method in path.values():
-            method.setdefault("security", [{"BearerAuth": []}])
-
-    app.openapi_schema = schema
-    return app.openapi_schema
-
-
-app.openapi = custom_openapi
