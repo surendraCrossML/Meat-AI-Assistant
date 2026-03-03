@@ -13,7 +13,18 @@ from app.services.s3_service import (
     delete_file_from_s3,
     list_files_in_s3,
 )
-from app.schemas.schemas import DocumentRead, PresignedURLResponse
+from app.services.gemini_service import (
+    extract_keywords_from_query,
+    generate_response_from_documents,
+)
+from app.schemas.schemas import (
+    DocumentRead,
+    PresignedURLResponse,
+    DocumentSearchRequest,
+    DocumentQueryRequest,
+    DocumentQueryResponse,
+    KeywordExtractionResponse,
+)
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -124,3 +135,93 @@ def delete_document(
 
     db.delete(doc)
     db.commit()
+
+
+@router.post(
+    "/query",
+    response_model=DocumentQueryResponse,
+    summary="Query documents using natural language with AI keyword extraction",
+)
+def query_documents_with_ai(
+    request: DocumentQueryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Query documents using natural language.
+    
+    This endpoint:
+    1. Takes a user query in natural language
+    2. Uses Gemini AI to extract relevant keywords (recipes, beef-related terms)
+    3. Searches the database for matching documents
+    4. Returns matching documents with extraction details
+    
+    Request body:
+    - **query**: Your question or search intent (e.g., "What are the best beef recipes for a healthy diet?")
+    
+    Response includes:
+    - Extracted keywords and summaries
+    - List of matching documents
+    - Summary of the search
+    """
+    try:
+        # Extract keywords using Gemini AI
+        keywords_data = extract_keywords_from_query(request.query)
+        
+        # Prepare keyword extraction response
+        extracted_keywords = KeywordExtractionResponse(**keywords_data)
+        
+        # Combine all keywords for comprehensive search
+        all_keywords = extracted_keywords.keywords
+        
+        # Search documents using extracted keywords
+        matching_documents = []
+        
+        for keyword in all_keywords:
+            search_term = f"%{keyword}%"
+            docs = db.query(Document).filter(
+                Document.user_id == current_user.id,
+                (Document.document_name.ilike(search_term)) |
+                (Document.description.ilike(search_term))
+            ).all()
+            
+            # Add unique documents to the matching list
+            for doc in docs:
+                if not any(d.id == doc.id for d in matching_documents):
+                    matching_documents.append(doc)
+        
+        # Create summary
+        summary = f"Found {len(matching_documents)} document(s) matching your search for: {extracted_keywords.query_summary}"
+        
+        # Prepare a simple dict list for LLM input
+        docs_for_llm = [
+            {
+                "document_name": doc.document_name,
+                "description": doc.description or ""
+            }
+            for doc in matching_documents
+        ]
+        # Ask Gemini to produce a response based on the documents
+        try:
+            agent_response = generate_response_from_documents(request.query, docs_for_llm)
+        except Exception:
+            agent_response = "Unable to generate response from documents."
+        
+        return DocumentQueryResponse(
+            user_query=request.query,
+            extracted_keywords=extracted_keywords,
+            matching_documents=matching_documents,
+            summary=summary,
+            agent_response=agent_response,
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"AI service error: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing query: {str(e)}",
+        )
