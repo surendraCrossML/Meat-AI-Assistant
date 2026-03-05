@@ -40,7 +40,7 @@ class DocumentRead(BaseModel):
     document_size: int
     description: Optional[str]
     s3_key: str
-    user_id: int
+    user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

@@ -98,27 +98,49 @@ def refine_search_query(keywords: list, user_query: str) -> str:
 
 def generate_response_from_documents(user_query: str, documents: list[dict]) -> str:
     """
-    Use Gemini to answer the user's query based on matched documents.
+    Use Gemini to answer the user's query based on the actual content of matched documents.
 
-    documents should be a list of dictionaries with at least 'document_name' and 'description'.
+    Args:
+        user_query: The user's natural language question.
+        documents: List of dicts, each with keys:
+            - 'document_name' (str)
+            - 'content'       (str) — full text fetched from S3
+
+    Returns:
+        A helpful answer grounded only in the provided documents.
     """
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured")
-    
-    # build document summary lines
-    docs_text = "".join(
-        [f"- {doc.get('document_name')}: {doc.get('description', '')}\n" for doc in documents]
-    )
-    prompt = f"""
-    The user asked the following question:
-    {user_query}
 
-    Below are documents that may help answer their question:
-    {docs_text}
+    if not documents:
+        return "No matching documents were found to answer your question."
 
-    Based on the information provided, give a helpful response to the user's question.
-    If the documents do not contain enough information, say so politely.
-    """
-    model = genai.GenerativeModel("gemini-pro")
+    # Build a clearly labelled context block for the LLM
+    context_parts = []
+    for i, doc in enumerate(documents, start=1):
+        name = doc.get("document_name", f"Document {i}")
+        content = doc.get("content", "").strip()
+        context_parts.append(
+            f"--- Document {i}: {name} ---\n{content}\n"
+        )
+    context_text = "\n".join(context_parts)
+
+    prompt = f"""You are a helpful assistant that answers questions strictly based on the provided documents.
+
+DOCUMENTS:
+{context_text}
+
+USER QUESTION:
+{user_query}
+
+Instructions:
+- Answer the question using ONLY the information found in the documents above.
+- Be specific, practical, and helpful.
+- If the documents contain relevant recipes, steps, or tips, include them in your answer.
+- If the documents do not contain enough information to answer the question, say so clearly.
+- Do not reference external sources or make up information.
+"""
+
+    model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     return response.text.strip()
