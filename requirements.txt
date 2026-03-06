@@ -64,3 +64,5 @@ uvicorn==0.41.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==16.0
+mcp==1.26.0
+sse-starlette==3.3.2
