@@ -1,8 +1,20 @@
+import io
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
+
+# PDF and DOCX parsing libraries
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
+
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
 from app.db.base import get_db
 from app.models.document import Document
 from app.services.s3_service import (
@@ -29,6 +41,63 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 # Fixed S3 folder — all documents go here regardless of who uploads them
 S3_FOLDER = "beef-documents"
+
+
+# ---------------------------------------------------------------------------
+# Document text extraction helpers
+# ---------------------------------------------------------------------------
+
+def extract_text_from_pdf(file_bytes: bytes) -> str:
+    """
+    Parse a PDF file from raw bytes and return its full text content.
+    Uses pypdf to extract text from every page.
+    """
+    if PdfReader is None:
+        raise RuntimeError("pypdf is not installed. Run: pip install pypdf")
+
+    reader = PdfReader(io.BytesIO(file_bytes))
+    pages_text = []
+    for page_num, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        pages_text.append(f"[Page {page_num}]\n{text}")
+
+    full_text = "\n\n".join(pages_text)
+    print(f"[PDF PARSER] Extracted {len(reader.pages)} page(s), {len(full_text)} characters total.")
+    return full_text
+
+
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    """
+    Parse a DOCX file from raw bytes and return its full text content.
+    Concatenates all paragraph text in document order.
+    """
+    if DocxDocument is None:
+        raise RuntimeError("python-docx is not installed. Run: pip install python-docx")
+
+    doc = DocxDocument(io.BytesIO(file_bytes))
+    paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+    full_text = "\n".join(paragraphs)
+    print(f"[DOCX PARSER] Extracted {len(paragraphs)} paragraph(s), {len(full_text)} characters total.")
+    return full_text
+
+
+def extract_text_from_file(s3_key: str, file_bytes: bytes) -> str:
+    """
+    Route file bytes to the correct parser based on the S3 key extension.
+    - .pdf  → extract_text_from_pdf
+    - .docx → extract_text_from_docx
+    - other → decode as UTF-8 text
+    """
+    key_lower = s3_key.lower()
+    if key_lower.endswith(".pdf"):
+        return extract_text_from_pdf(file_bytes)
+    elif key_lower.endswith(".docx"):
+        return extract_text_from_docx(file_bytes)
+    else:
+        # Plain text / CSV / XML etc.
+        text = file_bytes.decode("utf-8", errors="replace")
+        print(f"[TEXT PARSER] Decoded {len(text)} characters as plain text.")
+        return text
 
 
 @router.post(
@@ -183,17 +252,35 @@ def query_documents_with_ai(
         summary = f"Found {len(matching_documents)} document(s) matching your search for: {extracted_keywords.query_summary}"
 
         # Fetch actual file content from S3 for each matched document
+        print(f"\n{'='*60}")
+        print(f"[QUERY] User asked: {request.query}")
+        print(f"[QUERY] Matched {len(matching_documents)} document(s) in DB: {[d.document_name for d in matching_documents]}")
+        print(f"{'='*60}")
+
         docs_for_llm = []
         for doc in matching_documents:
+            print(f"\n[S3 DOWNLOAD] Fetching: '{doc.document_name}' (s3_key={doc.s3_key})")
             try:
-                file_content = read_file_from_s3(doc.s3_key)
-            except Exception:
-                # Fall back to description if S3 read fails
+                from app.services.s3_service import download_bytes_from_s3
+                raw_bytes = download_bytes_from_s3(doc.s3_key)
+                print(f"[S3 DOWNLOAD] Downloaded {len(raw_bytes)} bytes for '{doc.document_name}'")
+                file_content = extract_text_from_file(doc.s3_key, raw_bytes)
+            except Exception as e:
+                # Fall back to description if S3 read or parsing fails
+                print(f"[S3 DOWNLOAD] ERROR for '{doc.document_name}': {e} — falling back to DB description.")
                 file_content = doc.description or ""
+
+            # DEBUG: Show a snippet of what the LLM will actually read
+            snippet = file_content[:300].replace("\n", " ")
+            print(f"[LLM INPUT] First 300 chars of '{doc.document_name}': {snippet!r}")
+            print(f"[LLM INPUT] Total content length sent to LLM: {len(file_content)} characters")
+
             docs_for_llm.append({
                 "document_name": doc.document_name,
                 "content": file_content,
             })
+
+        print(f"\n[LLM CALL] Sending {len(docs_for_llm)} document(s) to Gemini for response generation...")
         # Ask Gemini to produce a response based on the documents
         try:
             agent_response = generate_response_from_documents(request.query, docs_for_llm)
