@@ -66,10 +66,6 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
 
-# Mount MCP Server (for n8n and Claude Desktop access via HTTP SSE)
-from mcp_server.server import mcp
-app.mount("/mcp", mcp.sse_app())
-
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Server is running"}
