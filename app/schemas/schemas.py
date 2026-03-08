@@ -40,7 +40,7 @@ class DocumentRead(BaseModel):
     document_size: int
     description: Optional[str]
     s3_key: str
-    user_id: int
+    user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -48,3 +48,50 @@ class DocumentRead(BaseModel):
 class PresignedURLResponse(BaseModel):
     presigned_url: str
     expires_in_seconds: int = 3600
+
+
+class DocumentSearchRequest(BaseModel):
+    query: str
+    description: Optional[str] = None
+
+
+class KeywordExtractionResponse(BaseModel):
+    keywords: list[str]
+    recipe_related_keywords: list[str]
+    beef_related_keywords: list[str]
+    query_summary: str
+
+
+class DocumentQueryRequest(BaseModel):
+    query: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "What are the best beef recipes for a healthy diet?"
+            }
+        }
+
+
+class DocumentQueryResponse(BaseModel):
+    user_query: str
+    extracted_keywords: KeywordExtractionResponse
+    matching_documents: list[DocumentRead]
+    summary: str
+    agent_response: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_query": "What are the best beef recipes for a healthy diet?",
+                "extracted_keywords": {
+                    "keywords": ["beef", "recipes", "healthy"],
+                    "recipe_related_keywords": ["recipes", "cooking"],
+                    "beef_related_keywords": ["beef"],
+                    "query_summary": "Looking for healthy beef recipes"
+                },
+                "matching_documents": [],
+                "summary": "Found 0 documents matching your search",
+                "agent_response": "No documents found to answer your query."
+            }
+        }

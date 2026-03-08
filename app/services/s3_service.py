@@ -43,6 +43,42 @@ def delete_file_from_s3(s3_key: str) -> None:
     client.delete_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
 
 
+def read_file_from_s3(s3_key: str, max_bytes: int = 500_000) -> str:
+    """Download a text file from S3 and return its contents as a string.
+
+    Args:
+        s3_key: The S3 object key.
+        max_bytes: Maximum number of bytes to read (default 500 KB) to avoid
+                   sending enormous documents to the LLM context.
+
+    Returns:
+        The decoded text content of the file.
+    """
+    client = _get_client()
+    response = client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+    raw = response["Body"].read(max_bytes)
+    return raw.decode("utf-8", errors="replace")
+
+
+def download_bytes_from_s3(s3_key: str, max_bytes: int = 10_000_000) -> bytes:
+    """Download a file from S3 and return its raw bytes.
+
+    Unlike ``read_file_from_s3`` this function does NOT decode the bytes,
+    so it is safe for binary formats such as PDF and DOCX.
+
+    Args:
+        s3_key:    The S3 object key.
+        max_bytes: Maximum bytes to read (default 10 MB).
+
+    Returns:
+        Raw bytes of the S3 object content.
+    """
+    client = _get_client()
+    response = client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+    return response["Body"].read(max_bytes)
+
+
+
 def list_files_in_s3(prefix: str = "") -> list[dict]:
     """List objects in the S3 bucket, optionally filtered by prefix."""
     client = _get_client()
