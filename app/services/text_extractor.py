@@ -38,19 +38,19 @@ def extract_text_from_bytes(raw_bytes: bytes, s3_key: str) -> str:
     """
     ext = _ext(s3_key)
 
-    # ── PDF ───────────────────────────────────────────────────────────────────
+    # PDF
     if ext == ".pdf":
         return _extract_pdf(raw_bytes, s3_key)
 
-    # ── DOCX ──────────────────────────────────────────────────────────────────
+    # DOCX
     if ext in (".docx", ".doc"):
         return _extract_docx(raw_bytes, s3_key)
 
-    # ── Plain text / Markdown / CSV  ─────────────────────────────────────────
+    # Plain text / Markdown / CSV
     if ext in (".txt", ".md", ".csv", ".json"):
         return raw_bytes.decode("utf-8", errors="replace")
 
-    # ── Unknown: try UTF-8 first, fall back to partial decode ────────────────
+    # Unknown: try UTF-8 first, fall back to partial decode
     logger.warning(
         "[TextExtractor] Unknown extension '%s' for key %s — trying UTF-8 decode.",
         ext,
@@ -59,7 +59,7 @@ def extract_text_from_bytes(raw_bytes: bytes, s3_key: str) -> str:
     return raw_bytes.decode("utf-8", errors="replace")
 
 
-# ── PDF helper ────────────────────────────────────────────────────────────────
+# PDF helper
 def _extract_pdf(raw_bytes: bytes, s3_key: str) -> str:
     try:
         import pdfplumber  # imported here so it's optional at module level
@@ -85,7 +85,7 @@ def _extract_pdf(raw_bytes: bytes, s3_key: str) -> str:
         return ""
 
 
-# ── DOCX helper ───────────────────────────────────────────────────────────────
+# DOCX helper
 def _extract_docx(raw_bytes: bytes, s3_key: str) -> str:
     try:
         import docx as python_docx  # python-docx package
